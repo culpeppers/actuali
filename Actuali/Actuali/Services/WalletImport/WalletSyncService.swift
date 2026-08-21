@@ -66,21 +66,20 @@ actor WalletSyncService {
     /// Every Wallet account the user has authorized, for the mapping UI.
     func accounts() async throws -> [WalletAccount] {
         try await requireAuthorization()
-        var result: [WalletAccount] = []
-        for try await account in store.accounts(query: AccountQuery()) {
-            result.append(
-                WalletAccount(
-                    id: account.id.uuidString.lowercased(),
-                    displayName: account.displayName,
-                    institutionName: account.institutionName
-                )
-            )
-        }
+        let accounts = try await store.accounts(query: AccountQuery())
         // Sorted here rather than by the query: it's a handful of cards, and
         // the display order is a UI concern, not something to ask Wallet for.
-        return result.sorted {
-            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
-        }
+        return accounts
+            .map {
+                WalletAccount(
+                    id: $0.id.uuidString.lowercased(),
+                    displayName: $0.displayName,
+                    institutionName: $0.institutionName
+                )
+            }
+            .sorted {
+                $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+            }
     }
 
     /// Import candidates for everything on or after `since`, keyed by Wallet
@@ -97,7 +96,7 @@ actor WalletSyncService {
             predicate: #Predicate<FinanceKit.Transaction> { $0.transactionDate >= since }
         )
         var grouped: [String: [WalletImportCandidate]] = [:]
-        for try await transaction in store.transactions(query: query) {
+        for transaction in try await store.transactions(query: query) {
             guard let candidate = FinanceKitBridge.candidate(from: transaction) else { continue }
             grouped[transaction.accountID.uuidString.lowercased(), default: []].append(candidate)
         }
