@@ -320,6 +320,14 @@ struct AccountsListView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
+                        if !budgetStore.bankSyncAccounts.isEmpty {
+                            Button {
+                                Task { await budgetStore.runBankSync() }
+                            } label: {
+                                Label("Sync Bank Accounts", systemImage: "building.columns")
+                            }
+                            .disabled(budgetStore.isBankSyncing)
+                        }
                         Toggle(isOn: $budgetStore.hideClosedAccounts) {
                             Label("Hide Closed Accounts", systemImage: "archivebox")
                         }
@@ -356,6 +364,14 @@ struct AccountsListView: View {
                 AddAccountView()
                     .environmentObject(budgetStore)
             }
+            // Attached here, not on the menu item that starts the sync: the
+            // menu is long gone by the time the download finishes, and this
+            // stack's pushed account views sit above this alert anyway.
+            .alert("Bank Sync", isPresented: bankSyncAlertBinding) {
+                Button("OK", role: .cancel) { budgetStore.bankSyncSummary = nil }
+            } message: {
+                Text(budgetStore.bankSyncSummary ?? "")
+            }
             .sheet(isPresented: $showingPendingImports) {
                 PendingImportsView()
                     .environmentObject(budgetStore)
@@ -391,6 +407,13 @@ struct AccountsListView: View {
             }
     }
     
+    private var bankSyncAlertBinding: Binding<Bool> {
+        Binding(
+            get: { budgetStore.bankSyncSummary != nil },
+            set: { if !$0 { budgetStore.bankSyncSummary = nil } }
+        )
+    }
+
     private func loadMonthSummary() async {
         let month = BudgetView.currentMonthString()
         guard let totals = await budgetStore.fetchAccountsMonthSummary(month: month) else { return }
