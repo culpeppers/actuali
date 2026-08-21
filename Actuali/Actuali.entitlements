@@ -4,9 +4,19 @@
   App entitlements. The app group is how the widget extension reads the
   category-balance snapshot the app writes; the identifier must match
   WidgetSnapshotStore.appGroupID and ActualiWidgets.entitlements.
+
+  com.apple.developer.financekit backs automatic Wallet sync (GH #55, Tier 2).
+  It is a MANAGED entitlement: Apple grants it per bundle id on request, and
+  until the grant lands, device and TestFlight builds fail to sign against a
+  profile that lacks it. Simulator builds and the manual Tier 1 picker are
+  unaffected either way — the picker never needed an entitlement.
 -->
 <plist version="1.0">
 <dict>
+	<key>com.apple.developer.financekit</key>
+	<array>
+		<string>financial-data</string>
+	</array>
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.com.mfazz.ActualiOS</string>

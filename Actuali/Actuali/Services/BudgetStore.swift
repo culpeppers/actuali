@@ -469,6 +469,21 @@ final class BudgetStore: ObservableObject {
         }
     }
 
+    /// Whether mapped Wallet accounts pull new transactions in automatically
+    /// on foreground (GH #55, Tier 2). Opt-in (defaults off) for the same
+    /// reason as `postScheduledTransactions`: every pass writes to the user's
+    /// real Actual server. Turning it on is only half the switch — an account
+    /// syncs when it also has a `walletAccountMappings` entry.
+    @Published var automaticWalletSync: Bool = false {
+        didSet {
+            UserDefaults.standard.set(automaticWalletSync, forKey: "automaticWalletSync")
+        }
+    }
+
+    /// Transient toast text ("Imported N Wallet transaction(s)"), cleared a
+    /// few seconds after being set. Nil = no toast.
+    @Published var walletSyncNotice: String?
+
     /// Transient toast text ("Posted N scheduled transaction(s)"), cleared
     /// automatically a few seconds after being set. Nil = no toast.
     @Published var schedulePostNotice: String?
@@ -525,6 +540,41 @@ final class BudgetStore: ObservableObject {
         set {
             guard let budgetId = currentBudgetId else { return }
             UserDefaults.standard.set(newValue, forKey: "cardAccountMappings_\(budgetId)")
+            objectWillChange.send()
+        }
+    }
+
+    /// Mappings from Wallet (FinanceKit) account id -> Actual accountId, for
+    /// automatic Wallet sync (GH #55, Tier 2). Per budget, because the
+    /// destination accounts are: the same Apple Card maps somewhere different
+    /// in a different budget file.
+    var walletAccountMappings: [String: String] {
+        get {
+            guard let budgetId = currentBudgetId else { return [:] }
+            return UserDefaults.standard.dictionary(forKey: "walletAccountMappings_\(budgetId)") as? [String: String] ?? [:]
+        }
+        set {
+            guard let budgetId = currentBudgetId else { return }
+            UserDefaults.standard.set(newValue, forKey: "walletAccountMappings_\(budgetId)")
+            objectWillChange.send()
+        }
+    }
+
+    /// When automatic Wallet sync last completed for this budget — the anchor
+    /// `WalletSyncPlanner.since` works back from. Nil means it has never run,
+    /// which is what makes the next pass a bounded first backfill.
+    var lastWalletSyncDate: Date? {
+        get {
+            guard let budgetId = currentBudgetId else { return nil }
+            return UserDefaults.standard.object(forKey: "lastWalletSyncDate_\(budgetId)") as? Date
+        }
+        set {
+            guard let budgetId = currentBudgetId else { return }
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: "lastWalletSyncDate_\(budgetId)")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "lastWalletSyncDate_\(budgetId)")
+            }
             objectWillChange.send()
         }
     }
@@ -1056,6 +1106,8 @@ final class BudgetStore: ObservableObject {
             .bool(forKey: "hideClosedAccounts"))
         _postScheduledTransactions = Published(initialValue: UserDefaults.standard
             .bool(forKey: "postScheduledTransactions"))
+        _automaticWalletSync = Published(initialValue: UserDefaults.standard
+            .bool(forKey: "automaticWalletSync"))
 
         let token = loadAndMigrateAuthToken()
 
@@ -2156,6 +2208,108 @@ final class BudgetStore: ObservableObject {
     /// were imported before. Read-only convenience for `WalletImportView`.
     func walletFinancialIds(accountId: String) -> Set<String> {
         (try? database?.existingFinancialIds(accountId: accountId)) ?? []
+    }
+
+    // MARK: - Automatic Wallet Sync (GH #55, Tier 2)
+
+    /// One service for the store's lifetime rather than one per pass. It holds
+    /// no budget state, so unlike `schedulePoster` it survives a budget switch.
+    private var walletSyncService: WalletSyncService?
+
+    /// Reentrancy guard. `syncOnForeground()` can run twice concurrently (the
+    /// cold-launch loadTask races the scenePhase handler), and two passes over
+    /// the same window would double-import: `financial_id` dedup only sees the
+    /// rows already written, not the ones the other pass is mid-flight on.
+    private var isSyncingWallet = false
+
+    private var walletNoticeDismissTask: Task<Void, Never>?
+
+    /// Current Wallet access. A throwing status read means Actuali can't ask
+    /// FinanceKit yet — most often the entitlement isn't granted for this
+    /// build — which reads the same as never having asked.
+    func walletAuthorizationStatus() async -> WalletAuthorization {
+        guard WalletSyncService.isSupported else { return .denied }
+        return (try? await walletService().authorizationStatus()) ?? .notDetermined
+    }
+
+    func requestWalletAuthorization() async throws -> WalletAuthorization {
+        guard WalletSyncService.isSupported else { throw WalletSyncError.unavailable }
+        return try await walletService().requestAuthorization()
+    }
+
+    /// The Wallet accounts available to map, for `WalletSyncView`.
+    func walletAccounts() async throws -> [WalletAccount] {
+        guard WalletSyncService.isSupported else { throw WalletSyncError.unavailable }
+        return try await walletService().accounts()
+    }
+
+    /// Import everything the mapped Wallet accounts have published since the
+    /// last pass. Each batch goes through `importWalletTransactions`, so the
+    /// rules pass and `financial_id` dedup are identical to a manual import.
+    /// - Returns: transactions written; duplicates skipped don't count.
+    @discardableResult
+    func syncWalletTransactions() async throws -> Int {
+        guard WalletSyncService.isSupported else { throw WalletSyncError.unavailable }
+        guard currentBudgetId != nil else { throw BudgetStoreError.syncNotConfigured }
+        let mappings = walletAccountMappings
+        // Nothing suspends between this guard and the flag below, so two
+        // MainActor-interleaved calls can never both get past it.
+        guard !mappings.isEmpty, !isSyncingWallet else { return 0 }
+        isSyncingWallet = true
+        defer { isSyncingWallet = false }
+
+        let now = Date()
+        let since = WalletSyncPlanner.since(lastSync: lastWalletSyncDate, now: now)
+        let grouped = try await walletService().transactions(since: since)
+        let batches = WalletSyncPlanner.plan(
+            grouped: grouped,
+            mappings: mappings,
+            openAccountIds: Set(accounts.filter { !$0.closed }.map(\.id))
+        )
+        var imported = 0
+        for batch in batches {
+            imported += try await importWalletTransactions(
+                batch.candidates, accountId: batch.accountId
+            ).imported
+        }
+        // Stamped only once every batch landed. Moving the window forward on a
+        // pass that threw halfway would skip whatever the failed batches held.
+        lastWalletSyncDate = now
+        logger.info("Wallet sync imported \(imported, privacy: .public) transaction(s)")
+        return imported
+    }
+
+    /// The toast copy for a completed sync pass.
+    static func walletSyncNoticeText(count: Int) -> String {
+        "Imported \(count) Wallet transaction\(count == 1 ? "" : "s")"
+    }
+
+    /// The foreground hook. Deliberately silent on failure: a revoked
+    /// authorization or an ungranted entitlement must not put an error in
+    /// front of someone who was just opening the app. The Wallet Sync screen
+    /// surfaces the real error when they ask for a pass themselves.
+    private func syncWalletTransactionsIfEnabled() async {
+        guard automaticWalletSync, WalletSyncService.isSupported else { return }
+        do {
+            let imported = try await syncWalletTransactions()
+            guard imported > 0 else { return }
+            walletSyncNotice = Self.walletSyncNoticeText(count: imported)
+            walletNoticeDismissTask?.cancel()
+            walletNoticeDismissTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(4))
+                guard !Task.isCancelled else { return }
+                self?.walletSyncNotice = nil
+            }
+        } catch {
+            logger.error("Automatic Wallet sync failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func walletService() -> WalletSyncService {
+        if let walletSyncService { return walletSyncService }
+        let service = WalletSyncService()
+        walletSyncService = service
+        return service
     }
 
     /// Create a paired transfer between two accounts. Writes both legs with linked
@@ -3545,6 +3699,10 @@ final class BudgetStore: ObservableObject {
         // successful sync: posting against stale data risks double-posting
         // an occurrence another client already covered.
         if success { await postDueSchedulesIfNeeded() }
+        // Not gated on `success`: Wallet transactions are local writes whose
+        // CRDT messages queue and go out on the next attempt, so a server that
+        // was unreachable at wake is no reason to leave them unimported.
+        await syncWalletTransactionsIfEnabled()
         await refreshDataOnly()
         await notifyAboutSyncedTransactions()
     }

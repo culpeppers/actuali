@@ -690,12 +690,17 @@ struct SettingsView: View {
                         } label: {
                             Label("Import Wallet Transactions", systemImage: "square.and.arrow.down")
                         }
+                        NavigationLink {
+                            WalletSyncView()
+                        } label: {
+                            Label("Wallet Sync", systemImage: "arrow.triangle.2.circlepath")
+                        }
                     }
                 } header: {
                     Text("Automations")
                 } footer: {
                     if WalletImportView.isSupported {
-                        Text("Set up a Shortcuts automation that logs tap-to-pay purchases from Apple Wallet, or import Apple Card, Apple Cash and Savings transactions directly.")
+                        Text("Set up a Shortcuts automation that logs tap-to-pay purchases from Apple Wallet, import Apple Card, Apple Cash and Savings transactions by hand, or map your cards once and let Wallet Sync bring new ones in on its own.")
                     } else {
                         Text("Set up a Shortcuts automation that logs tap-to-pay purchases from Apple Wallet.")
                     }

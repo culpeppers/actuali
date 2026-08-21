@@ -108,12 +108,15 @@ struct ActualiApp: App {
                     }
                 }
                 .overlay(alignment: .top) {
-                    if let notice = budgetStore.schedulePostNotice {
+                    // Both notices land on foreground, schedules first; the
+                    // Wallet one only ever shows when nothing posted.
+                    if let notice = budgetStore.schedulePostNotice ?? budgetStore.walletSyncNotice {
                         ToastView(text: notice)
                             .allowsHitTesting(false)
                     }
                 }
                 .animation(AppAnimation.appearance, value: budgetStore.schedulePostNotice)
+                .animation(AppAnimation.appearance, value: budgetStore.walletSyncNotice)
         }
     }
 }

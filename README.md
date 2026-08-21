@@ -64,6 +64,7 @@ This is an unofficial community project. It is not affiliated with or endorsed b
 - Siri & Shortcuts: log a transaction, open a prefilled add-transaction form, or ask for an account or category balance — see the [Siri & Shortcuts guide](https://actuali.mfazz.com/guides/shortcuts)
 - Background logging pushes straight to the server without opening the app; if it ever fails, tapping the notification opens a prefilled form so nothing is lost
 - Import Apple Card, Apple Cash, and Apple Savings transactions from Wallet via the FinanceKit picker, mapped to the accounts you choose
+- Or map each Wallet card to an account once and let Wallet Sync bring new transactions in every time you open the app — duplicates are skipped either way
 - Log purchases as you make them with the [Apple Wallet](https://actuali.mfazz.com/guides/wallet-automation) and [SMS](https://actuali.mfazz.com/guides/sms-automation) automation guides
 - Scheduled transactions post automatically on app open and after any successful sync, with the schedule's own category
 - Background refresh keeps data fresh and notifies you about newly synced transactions

@@ -5,16 +5,16 @@ import SwiftUI
 /// Import Apple Card / Apple Cash / Savings transactions from Wallet via the
 /// FinanceKit transaction picker (GH #55, Tier 1). The picker needs no
 /// FinanceKit entitlement — the user hand-picks transactions and access is
-/// one-time, so this works for any App Store build. Full automatic sync
-/// (Tier 2) needs Apple's managed FinanceKit entitlement and is tracked
-/// separately.
+/// one-time, so this works for any App Store build. Ongoing automatic sync
+/// is Tier 2, in `WalletSyncView` / `WalletSyncService`, and does need the
+/// entitlement.
 struct WalletImportView: View {
     @EnvironmentObject private var budgetStore: BudgetStore
     @Environment(\.dismiss) private var dismiss
 
     /// Whether this device can offer Wallet transactions at all (Apple Card /
     /// Apple Cash are US-only; unsupported devices hide the entry points).
-    static let isSupported = FinanceStore.isDataAvailable(.financialData)
+    static var isSupported: Bool { WalletSyncService.isSupported }
 
     @State private var selectedAccountId: String?
     @State private var walletSelection: [FinanceKit.Transaction] = []
@@ -33,7 +33,7 @@ struct WalletImportView: View {
 
     /// Wallet selection mapped to import candidates, picker order preserved.
     private var candidates: [WalletImportCandidate] {
-        walletSelection.compactMap { Self.candidate(from: $0) }
+        walletSelection.compactMap { FinanceKitBridge.candidate(from: $0) }
     }
 
     private var importableCount: Int {
@@ -196,31 +196,6 @@ struct WalletImportView: View {
             return
         }
         alreadyImportedIds = budgetStore.walletFinancialIds(accountId: accountId)
-    }
-
-    /// Bridge FinanceKit's transaction into the framework-free candidate the
-    /// mapper and store work with.
-    private static func candidate(from transaction: FinanceKit.Transaction) -> WalletImportCandidate? {
-        WalletImportMapper.candidate(
-            id: transaction.id,
-            amount: transaction.transactionAmount.amount,
-            isCredit: transaction.creditDebitIndicator == .credit,
-            merchantName: transaction.merchantName,
-            transactionDescription: transaction.transactionDescription,
-            status: Self.status(from: transaction.status),
-            date: transaction.transactionDate
-        )
-    }
-
-    private static func status(from status: FinanceKit.TransactionStatus) -> WalletImportMapper.Status {
-        switch status {
-        case .authorized: .authorized
-        case .memo: .memo
-        case .pending: .pending
-        case .booked: .booked
-        case .rejected: .rejected
-        @unknown default: .booked
-        }
     }
 }
 
