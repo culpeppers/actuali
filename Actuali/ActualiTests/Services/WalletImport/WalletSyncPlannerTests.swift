@@ -112,14 +112,6 @@ struct WalletSyncPlannerTests {
         #expect(batches.last?.candidates.map(\.id) == ["earlier", "later"])
     }
 
-    // MARK: - Toast copy
-
-    @MainActor
-    @Test func walletSyncNoticePluralizes() {
-        #expect(BudgetStore.walletSyncNoticeText(count: 1) == "Imported 1 Wallet transaction")
-        #expect(BudgetStore.walletSyncNoticeText(count: 2) == "Imported 2 Wallet transactions")
-    }
-
     @Test func emptyCandidateListProducesNoBatch() {
         let batches = WalletSyncPlanner.plan(
             grouped: ["wallet-1": []],
@@ -127,5 +119,13 @@ struct WalletSyncPlannerTests {
             openAccountIds: ["acct-1"]
         )
         #expect(batches.isEmpty)
+    }
+
+    // MARK: - Toast copy
+
+    @MainActor
+    @Test func walletSyncNoticePluralizes() {
+        #expect(BudgetStore.walletSyncNoticeText(count: 1) == "Imported 1 Wallet transaction")
+        #expect(BudgetStore.walletSyncNoticeText(count: 2) == "Imported 2 Wallet transactions")
     }
 }
