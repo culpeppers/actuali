@@ -15,6 +15,11 @@ struct AccountDetailView: View {
     @State private var showingLoanDetails = false
     @State private var showingLoanEditor = false
     @State private var showingLoanPlanner = false
+    @State private var showingLoanPayment = false
+    @State private var pairingLoanCategory = false
+    /// Everything paid into the loan, read from the database rather than the
+    /// paged transaction list, which only holds a window of the history.
+    @State private var loanTotalPaid: Int?
     @State private var searchText = ""
     @State private var showingAddTransaction = false
     @State private var showingReconcile = false
@@ -501,6 +506,43 @@ struct AccountDetailView: View {
                         breakdownRow(String(localized: "Payments Remaining"), value: "\(schedule.paymentCount)")
                         breakdownRow(String(localized: "Interest Remaining"), amount: schedule.totalInterest)
                     }
+                    // The progress ring above counts principal alone; this is
+                    // the same loan measured the other way, every cent that
+                    // has gone to it. YNAB splits the two across its Overview
+                    // and Activity tabs — one scrolling screen shows both.
+                    if let paid = loanTotalPaid, paid > 0 {
+                        breakdownRow(String(localized: "Total Paid"), amount: paid)
+                    }
+                    breakdownRow(
+                        String(localized: "Category"),
+                        value: budgetStore.pairedLoanCategory(for: account.id)?.name
+                            ?? String(localized: "Not paired")
+                    )
+
+                    Button {
+                        showingLoanPayment = true
+                    } label: {
+                        Label(String(localized: "Record Payment"), systemImage: "plus.circle")
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(budgetStore.syncDetachedByRestore)
+                    .accessibilityIdentifier("accountLoan.recordPayment")
+
+                    Button {
+                        pairingLoanCategory = true
+                    } label: {
+                        Label(
+                            budgetStore.pairedLoanCategory(for: account.id) == nil
+                                ? String(localized: "Pair With a Category")
+                                : String(localized: "Change Paired Category"),
+                            systemImage: "tag"
+                        )
+                        .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(budgetStore.syncDetachedByRestore)
+                    .accessibilityIdentifier("accountLoan.pairCategory")
 
                     // The terms are most often questioned while looking at the
                     // loan itself, so the editor opens from here rather than
@@ -524,6 +566,11 @@ struct AccountDetailView: View {
                     .disabled(budgetStore.syncDetachedByRestore)
                     .accessibilityIdentifier("accountLoan.edit")
                 }
+            }
+            // Keyed on the balance so recording a payment refreshes the
+            // total without the screen having to know it was the cause.
+            .task(id: currentBalance) {
+                loanTotalPaid = await budgetStore.totalPaidIntoLoan(accountId: account.id)
             }
         }
     }
@@ -719,6 +766,16 @@ struct AccountDetailView: View {
                 LoanPayoffPlannerView(account: account, config: config)
                     .environmentObject(budgetStore)
             }
+        }
+        .sheet(isPresented: $showingLoanPayment) {
+            if let config = budgetStore.activeLoanConfig(for: account.id) {
+                LoanPaymentView(account: account, config: config, balance: currentBalance)
+                    .environmentObject(budgetStore)
+            }
+        }
+        .sheet(isPresented: $pairingLoanCategory) {
+            LoanCategoryPairingView(accountId: account.id)
+                .environmentObject(budgetStore)
         }
         .sheet(isPresented: $showingLoanEditor) {
             // Read at presentation rather than captured with the button, so
