@@ -37,7 +37,7 @@ struct LoanEditorView: View {
             _paymentText = State(initialValue: "")
             _escrowText = State(initialValue: "")
             _rateText = State(initialValue: "")
-        case let .edit(accountId, config):
+        case .edit(let accountId, let config):
             _selectedAccountId = State(initialValue: accountId)
             _originalBalanceText = State(initialValue: Self.amountText(config.originalBalance))
             _paymentText = State(initialValue: Self.amountText(config.minimumPayment))
