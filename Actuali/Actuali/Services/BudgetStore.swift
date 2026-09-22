@@ -6837,6 +6837,14 @@ final class BudgetStore: ObservableObject {
                 categoryTemplates = categoryTemplates.filter { $0.key == categoryId }
             }
 
+            // A loan whose target is snoozed contributes nothing this month:
+            // YNAB's "skip a payment" without tearing the target down and
+            // rebuilding it next month.
+            let snoozed = snoozedLoanCategoryIds(inMonth: month)
+            if !snoozed.isEmpty {
+                categoryTemplates = categoryTemplates.filter { !snoozed.contains($0.key) }
+            }
+
             let sheet = try await database.fetchGoalTemplateSheet(month: month)
             let allCategories = rows.map {
                 GoalTemplateCategory(id: $0.id, name: $0.name, isIncome: $0.isIncome)

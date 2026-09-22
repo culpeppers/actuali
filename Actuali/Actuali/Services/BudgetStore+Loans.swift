@@ -129,3 +129,45 @@ extension BudgetStore {
         )
     }
 }
+
+// MARK: - Payment target
+
+extension BudgetStore {
+    /// What the paired category's automations would put aside this month.
+    ///
+    /// Deliberately a read, not a writer: Actual creates automations in one
+    /// place, the automations editor, and converting a notes-managed category
+    /// to UI-managed there needs an explicit Save behind a warning banner
+    /// (with `unmigrateAutomations` as the way back). A second writer on the
+    /// loan screen would bypass exactly that consent, so the loan screen shows
+    /// the number and opens the editor instead.
+    ///
+    /// The number is the editor's own "Estimated monthly total", through the
+    /// same dry run, so the two screens can't word the same fact differently.
+    /// nil means unpaired or nothing to contribute — no target set.
+    func loanTargetMonthly(accountId: String, month: String) async -> Int? {
+        guard let categoryId = activeLoanConfig(for: accountId)?.categoryId,
+              let data = try? await loadAutomationEditor(categoryId: categoryId, month: month)
+        else { return nil }
+        let templates = data.entries.map(\.template)
+        guard !templates.isEmpty else { return nil }
+        return dryRunAutomations(month: month, data: data, templates: templates).budgeted
+    }
+
+    /// Skip this loan's target for `month` (`YYYY-MM`), or clear the skip
+    /// with nil — YNAB's snooze, for the month you miss a payment.
+    func snoozeLoanTarget(accountId: String, month: String?) async {
+        guard var config = loanConfigs[accountId] else { return }
+        config.targetSnoozedMonth = month
+        await setLoan(accountId: accountId, config: config)
+    }
+
+    /// Categories whose loan target is snoozed for `month`, so a template run
+    /// can pass over them. Empty is the overwhelmingly common case and costs
+    /// the run nothing.
+    func snoozedLoanCategoryIds(inMonth month: String) -> Set<String> {
+        Set(activeLoanConfigs.values.compactMap {
+            $0.targetIsSnoozed(in: month) ? $0.categoryId : nil
+        })
+    }
+}

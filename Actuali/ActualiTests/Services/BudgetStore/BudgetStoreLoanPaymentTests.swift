@@ -311,6 +311,67 @@ struct BudgetStoreLoanPaymentTests {
         #expect(stored?.annualRatePercent == config.annualRatePercent)
     }
 
+    // MARK: - Snoozing the target
+
+    private func pairedLoan(_ fixture: Fixture) async -> String {
+        await fixture.store.pairLoan(accountId: fixture.loan.id, categoryId: "cat_car")
+        return "cat_car"
+    }
+
+    @Test func snoozingTheTargetCoversThatMonthAlone() async throws {
+        let (fixture, root) = try await makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let categoryId = await pairedLoan(fixture)
+
+        await fixture.store.snoozeLoanTarget(accountId: fixture.loan.id, month: "2026-09")
+
+        #expect(fixture.store.snoozedLoanCategoryIds(inMonth: "2026-09") == [categoryId])
+        #expect(fixture.store.snoozedLoanCategoryIds(inMonth: "2026-10").isEmpty)
+    }
+
+    @Test func clearingTheSnoozeLetsTheTargetRunAgain() async throws {
+        let (fixture, root) = try await makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = await pairedLoan(fixture)
+
+        await fixture.store.snoozeLoanTarget(accountId: fixture.loan.id, month: "2026-09")
+        await fixture.store.snoozeLoanTarget(accountId: fixture.loan.id, month: nil)
+
+        #expect(fixture.store.snoozedLoanCategoryIds(inMonth: "2026-09").isEmpty)
+        #expect(fixture.store.loanConfigs[fixture.loan.id]?.targetSnoozedMonth == nil)
+    }
+
+    /// Nothing to skip without a paired category — the snooze is stored, but
+    /// it can't name a category for the template run to pass over.
+    @Test func snoozingAnUnpairedLoanExcludesNothing() async throws {
+        let (fixture, root) = try await makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        await fixture.store.snoozeLoanTarget(accountId: fixture.loan.id, month: "2026-09")
+
+        #expect(fixture.store.loanConfigs[fixture.loan.id]?.targetSnoozedMonth == "2026-09")
+        #expect(fixture.store.snoozedLoanCategoryIds(inMonth: "2026-09").isEmpty)
+    }
+
+    /// A closed loan drops out through the same `activeLoanConfigs` predicate
+    /// every other loan surface uses, so a stale snooze on a paid-off loan
+    /// can't keep suppressing its old category.
+    @Test func aClosedLoansSnoozeStopsApplying() async throws {
+        let (fixture, root) = try await makeFixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = await pairedLoan(fixture)
+        await fixture.store.snoozeLoanTarget(accountId: fixture.loan.id, month: "2026-09")
+        #expect(!fixture.store.snoozedLoanCategoryIds(inMonth: "2026-09").isEmpty)
+
+        fixture.store.accounts = fixture.store.accounts.map { account in
+            var copy = account
+            if copy.id == fixture.loan.id { copy.closed = true }
+            return copy
+        }
+
+        #expect(fixture.store.snoozedLoanCategoryIds(inMonth: "2026-09").isEmpty)
+    }
+
     /// A category that no longer exists leaves the loan reading as unpaired,
     /// so no screen names something the user can't open.
     @Test func aPairedCategoryThatVanishedReadsAsUnpaired() async throws {
