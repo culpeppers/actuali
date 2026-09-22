@@ -178,7 +178,9 @@ extension LoanAmortization {
         let month: DayDate
         let balance: Int
 
-        var id: Int { month.yyyymmdd }
+        var id: Int {
+            month.yyyymmdd
+        }
     }
 }
 

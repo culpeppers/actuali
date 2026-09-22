@@ -96,7 +96,7 @@ struct LoanPayoffPlannerView: View {
         }
     }
 
-    @ViewBuilder private var inputsSection: some View {
+    private var inputsSection: some View {
         Section {
             LabeledContent(
                 String(localized: "Required Minimum Payment"),
