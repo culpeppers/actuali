@@ -296,7 +296,7 @@ struct LoanSummaryRow: View {
 
     /// "10.0% Paid Off", matching YNAB's own wording on the loan overview.
     nonisolated static func progressText(_ fraction: Double) -> String {
-        String(format: String(localized: "%@ Paid Off"), Self.percentText(fraction))
+        String(format: String(localized: "%@ Paid Off"), percentText(fraction))
     }
 
     nonisolated static func percentText(_ fraction: Double, locale: Locale = .autoupdatingCurrent) -> String {
