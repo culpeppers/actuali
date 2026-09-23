@@ -55,6 +55,11 @@ struct BudgetStoreLoanPaymentTests {
         let store = BudgetStore.previewInstance()
         store.setFileManagerForTesting(manager)
         await store.loadLocalBudget(budgetId)
+        // `loadLocalBudget` opens the database and configures sync but leaves
+        // `currentBudgetId` to its callers — `downloadBudget` and
+        // `createBudget` both set it before calling in. Without it `setLoan`
+        // returns on its first guard and stores nothing, silently.
+        store.currentBudgetId = budgetId
 
         let checking = try await store.createAccount(
             name: "Checking", offBudget: false, startingBalanceCents: startingCash
@@ -63,6 +68,10 @@ struct BudgetStoreLoanPaymentTests {
             name: "Car Loan", offBudget: true, startingBalanceCents: owing
         )
         await store.setLoan(accountId: loan.id, config: config)
+        // Fail here rather than as a scatter of downstream expectations: a
+        // fixture that quietly stops storing the loan makes every test that
+        // needs one fail for a reason none of them name.
+        try #require(store.loanConfigs[loan.id] == config)
 
         return (
             Fixture(
