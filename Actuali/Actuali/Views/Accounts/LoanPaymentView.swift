@@ -57,9 +57,17 @@ struct LoanPaymentView: View {
         budgetStore.accounts.first { $0.id == account.id }?.balance ?? account.balance
     }
 
-    private var payment: Int { LoanEditorView.cents(from: paymentText) ?? 0 }
-    private var interest: Int { LoanEditorView.cents(from: interestText) ?? 0 }
-    private var escrow: Int { config.escrowOrFees == nil ? 0 : LoanEditorView.cents(from: escrowText) ?? 0 }
+    private var payment: Int {
+        LoanEditorView.cents(from: paymentText) ?? 0
+    }
+
+    private var interest: Int {
+        LoanEditorView.cents(from: interestText) ?? 0
+    }
+
+    private var escrow: Int {
+        config.escrowOrFees == nil ? 0 : LoanEditorView.cents(from: escrowText) ?? 0
+    }
 
     /// What actually comes off the balance. Can go negative, and says so
     /// rather than clamping: a payment that doesn't cover the lender's

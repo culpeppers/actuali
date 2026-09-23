@@ -224,7 +224,7 @@ struct BudgetStoreLoanPaymentTests {
         let (fixture, root) = try await makeFixture()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        for _ in 0 ..< 2 {
+        for _ in 0..<2 {
             try await fixture.store.recordLoanPayment(
                 accountId: fixture.loan.id,
                 fromAccountId: fixture.checking.id,
@@ -365,7 +365,9 @@ struct BudgetStoreLoanPaymentTests {
 
         fixture.store.accounts = fixture.store.accounts.map { account in
             var copy = account
-            if copy.id == fixture.loan.id { copy.closed = true }
+            if copy.id == fixture.loan.id {
+                copy.closed = true
+            }
             return copy
         }
 
