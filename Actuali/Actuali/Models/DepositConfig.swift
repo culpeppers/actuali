@@ -57,6 +57,16 @@ struct DepositConfig: Codable, Equatable, Hashable, Sendable {
 
     /// How long the deposit runs, in months.
     var termMonths: Int
+
+    /// Declared rather than synthesized: Swift only synthesizes `CodingKeys`
+    /// when it also synthesizes one of `init(from:)`/`encode(to:)`, and this
+    /// type hand-writes both — `init(from:)` for the compounding fallback,
+    /// `encode(to:)` to put the opening day on the wire as `YYYYMMDD`.
+    /// `LoanConfig` and `CreditCardConfig` only customise decoding, which is
+    /// why they still get theirs for free.
+    private enum CodingKeys: String, CodingKey {
+        case kind, amount, annualRatePercent, compounding, openedOn, termMonths
+    }
 }
 
 extension DepositConfig {
@@ -64,14 +74,15 @@ extension DepositConfig {
     /// convention, and the one every other date in this database uses. That
     /// keeps `DayDate` free of a `Codable` conformance it would only need here.
     ///
-    /// Later fields decode with `decodeIfPresent` the way `CreditCardConfig`
-    /// and `LoanConfig` already handle their own additions, so a config written
-    /// by a client that predates them still reads. An unrecognised compounding
-    /// frequency falls back to quarterly rather than failing the whole decode:
-    /// losing the frequency costs precision, failing the decode loses the
-    /// account's tracking entirely. A missing or impossible opening date is not
-    /// recoverable that way — every figure is measured from it — so that does
-    /// throw.
+    /// The compounding frequency falls back to quarterly when it is missing or
+    /// unrecognised — `try?` rather than `decodeIfPresent`, which would throw
+    /// on a value that is present but from a newer client. That is the same
+    /// forward compatibility `CreditCardConfig` and `LoanConfig` keep for
+    /// their own later fields: losing the frequency costs precision, failing
+    /// the decode loses the account's tracking entirely.
+    ///
+    /// A missing or impossible opening date is not recoverable that way —
+    /// every figure is measured from it — so that does throw.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         kind = try container.decode(Kind.self, forKey: .kind)
