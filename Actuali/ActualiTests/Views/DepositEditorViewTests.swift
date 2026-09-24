@@ -103,9 +103,13 @@ struct DepositEditorViewTests {
 
     @Test func everyCompoundingFrequencyHasItsOwnLabel() {
         let labels = DepositConfig.Compounding.allCases.map(DepositEditorView.compoundingLabel)
+        // Counted outside the macro: `#expect` re-invokes a rethrowing call
+        // like `contains(where:)` through a generic function value, which the
+        // expansion then reads as throwing and refuses to compile.
+        let blankCount = labels.filter(\.isEmpty).count
 
         #expect(Set(labels).count == DepositConfig.Compounding.allCases.count)
-        #expect(!labels.contains(where: \.isEmpty))
+        #expect(blankCount == 0)
     }
 
     // MARK: - Summary row
